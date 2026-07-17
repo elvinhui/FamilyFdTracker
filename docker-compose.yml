@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  app:
+    build: ./app
+    container_name: fd_automation_engine
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8501:8501" # Only mapped for local Streamlit dev; remove in prod if using strict tunnel
+    networks:
+      - secure_net
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: secure_tunnel
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: tunnel --no-autoupdate run --token ${CF_TOKEN}
+    networks:
+      - secure_net
+
+networks:
+  secure_net:
+    driver: bridge
