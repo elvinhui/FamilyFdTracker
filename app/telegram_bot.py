@@ -1,6 +1,7 @@
 import os
 import asyncio
-import google.generativeai as genai
+import requests
+import base64
 import json
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -9,16 +10,7 @@ import tempfile
 import mimetypes
 
 # Initialize Gemini
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-generation_config = {
-  "temperature": 0.1,
-  "top_p": 1,
-  "top_k": 1,
-  "max_output_tokens": 1024,
-  "response_mime_type": "application/json",
-}
-model = genai.GenerativeModel(model_name="gemini-1.5-flash", generation_config=generation_config)
-
+# (Configuration will be passed via request headers)
 db = DynamoDBHandler()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -39,9 +31,14 @@ async def process_document_or_photo(update: Update, context: ContextTypes.DEFAUL
         temp_file_path = temp_file.name
 
     try:
-        # Upload to Gemini API
-        uploaded_file = genai.upload_file(path=temp_file_path, display_name=file_name)
+        # Upload to Gemini API via raw REST call to avoid AQ. key issues
+        with open(temp_file_path, "rb") as f:
+            file_data = base64.b64encode(f.read()).decode("utf-8")
         
+        mime_type = "application/pdf" if temp_file_path.endswith(".pdf") else "image/jpeg"
+        if suffix in [".png"]:
+            mime_type = "image/png"
+            
         prompt = """
         Extract the following information from this Fixed Deposit document. Return a JSON object exactly matching this schema:
         {
@@ -53,10 +50,37 @@ async def process_document_or_photo(update: Update, context: ContextTypes.DEFAUL
         }
         """
         
-        response = model.generate_content([uploaded_file, prompt])
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": os.getenv("GEMINI_API_KEY")
+        }
         
-        # Clean up gemini file
-        genai.delete_file(uploaded_file.name)
+        payload = {
+            "contents": [{
+                "parts": [
+                    {"text": prompt},
+                    {"inline_data": {
+                        "mime_type": mime_type,
+                        "data": file_data
+                    }}
+                ]
+            }],
+            "generationConfig": {
+                "temperature": 0.1,
+                "topP": 1,
+                "topK": 1,
+                "maxOutputTokens": 1024,
+                "responseMimeType": "application/json"
+            }
+        }
+        
+        resp = requests.post(url, headers=headers, json=payload)
+        resp.raise_for_status()
+        
+        resp_json = resp.json()
+        raw_text = resp_json["candidates"][0]["content"]["parts"][0]["text"]
+        
         os.remove(temp_file_path)
         
         # Parse result (handling potential markdown code blocks)
