@@ -48,7 +48,8 @@ async def process_document_or_photo(update: Update, context: ContextTypes.DEFAUL
             mime_type = "image/png"
             
         prompt = """
-        Extract ALL fixed deposit records from this document.
+        Extract ALL fixed deposit records from this document. The document might be a table, a formal letter, a receipt, or any other format. Dynamically identify and extract all distinct fixed deposit placements you can find.
+        
         Return ONLY a valid JSON ARRAY of objects matching the keys below. Do NOT include any comments (//), trailing commas, or markdown formatting.
         [
           {
