@@ -50,10 +50,9 @@ async def process_document_or_photo(update: Update, context: ContextTypes.DEFAUL
         }
         """
         
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={os.getenv('GEMINI_API_KEY')}"
         headers = {
-            "Content-Type": "application/json",
-            "x-goog-api-key": os.getenv("GEMINI_API_KEY")
+            "Content-Type": "application/json"
         }
         
         payload = {
