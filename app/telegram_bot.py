@@ -68,8 +68,6 @@ async def process_document_or_photo(update: Update, context: ContextTypes.DEFAUL
         
         os.remove(temp_file_path)
         
-        import re
-        
         raw_text = response.text.strip()
         
         # Clean markdown code blocks
@@ -78,18 +76,33 @@ async def process_document_or_photo(update: Update, context: ContextTypes.DEFAUL
         elif "```" in raw_text:
             raw_text = raw_text.split("```")[1].strip()
             
-        # Robustly extract JSON object using regex if there's still surrounding text
-        start_idx = raw_text.find('{')
-        end_idx = raw_text.rfind('}')
-        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-            json_str = raw_text[start_idx:end_idx+1]
+        # Clean up any trailing commas that might break parser
+        import re
+        raw_text = re.sub(r',\s*\}', '}', raw_text)
+        raw_text = re.sub(r',\s*\]', ']', raw_text)
+            
+        # Find the start of the JSON object or array
+        start_idx = -1
+        for i, c in enumerate(raw_text):
+            if c in '{[':
+                start_idx = i
+                break
+                
+        if start_idx != -1:
+            decoder = json.JSONDecoder(strict=False)
+            try:
+                result, _ = decoder.raw_decode(raw_text[start_idx:])
+            except json.JSONDecodeError:
+                # Fallback to normal loads if raw_decode fails
+                result = json.loads(raw_text[start_idx:], strict=False)
         else:
-            json_str = raw_text
+            result = json.loads(raw_text, strict=False)
             
-        # Clean up any trailing commas that might break json.loads
-        json_str = re.sub(r',\s*\}', '}', json_str)
-            
-        result = json.loads(json_str, strict=False)
+        if isinstance(result, list):
+            if len(result) > 0:
+                result = result[0]
+            else:
+                result = {}
         
         # Add to database
         db.add_deposit(
