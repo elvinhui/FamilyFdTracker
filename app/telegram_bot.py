@@ -89,7 +89,7 @@ async def process_document_or_photo(update: Update, context: ContextTypes.DEFAUL
         # Clean up any trailing commas that might break json.loads
         json_str = re.sub(r',\s*\}', '}', json_str)
             
-        result = json.loads(json_str)
+        result = json.loads(json_str, strict=False)
         
         # Add to database
         db.add_deposit(
