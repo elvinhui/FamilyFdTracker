@@ -1,7 +1,6 @@
 import os
 import asyncio
-import requests
-import base64
+import google.generativeai as genai
 import json
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -10,7 +9,16 @@ import tempfile
 import mimetypes
 
 # Initialize Gemini
-# (Configuration will be passed via request headers)
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+generation_config = {
+  "temperature": 0.1,
+  "top_p": 1,
+  "top_k": 1,
+  "max_output_tokens": 1024,
+  "response_mime_type": "application/json",
+}
+model = genai.GenerativeModel(model_name="gemini-1.5-flash", generation_config=generation_config)
+
 db = DynamoDBHandler()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -31,9 +39,9 @@ async def process_document_or_photo(update: Update, context: ContextTypes.DEFAUL
         temp_file_path = temp_file.name
 
     try:
-        # Upload to Gemini API via raw REST call to avoid AQ. key issues
+        # Read file as raw bytes for inline data (bypasses upload_file discovery bug)
         with open(temp_file_path, "rb") as f:
-            file_data = base64.b64encode(f.read()).decode("utf-8")
+            file_data = f.read()
         
         mime_type = "application/pdf" if temp_file_path.endswith(".pdf") else "image/jpeg"
         if suffix in [".png"]:
@@ -50,35 +58,11 @@ async def process_document_or_photo(update: Update, context: ContextTypes.DEFAUL
         }
         """
         
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={os.getenv('GEMINI_API_KEY')}"
-        headers = {
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "contents": [{
-                "parts": [
-                    {"text": prompt},
-                    {"inline_data": {
-                        "mime_type": mime_type,
-                        "data": file_data
-                    }}
-                ]
-            }],
-            "generationConfig": {
-                "temperature": 0.1,
-                "topP": 1,
-                "topK": 1,
-                "maxOutputTokens": 1024,
-                "responseMimeType": "application/json"
-            }
-        }
-        
-        resp = requests.post(url, headers=headers, json=payload)
-        resp.raise_for_status()
-        
-        resp_json = resp.json()
-        raw_text = resp_json["candidates"][0]["content"]["parts"][0]["text"]
+        # Send inline data directly to the model
+        response = model.generate_content([
+            {"mime_type": mime_type, "data": file_data},
+            prompt
+        ])
         
         os.remove(temp_file_path)
         
