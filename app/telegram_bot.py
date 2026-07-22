@@ -66,16 +66,18 @@ async def process_document_or_photo(update: Update, context: ContextTypes.DEFAUL
         
         os.remove(temp_file_path)
         
-        # Parse result (handling potential markdown code blocks)
+        import re
+        
         raw_text = response.text.strip()
-        if raw_text.startswith("```json"):
-            raw_text = raw_text[7:]
-        if raw_text.startswith("```"):
-            raw_text = raw_text[3:]
-        if raw_text.endswith("```"):
-            raw_text = raw_text[:-3]
+        
+        # Robustly extract JSON object using regex
+        match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+        if match:
+            json_str = match.group(0)
+        else:
+            json_str = raw_text
             
-        result = json.loads(raw_text.strip())
+        result = json.loads(json_str)
         
         # Add to database
         db.add_deposit(
