@@ -48,15 +48,17 @@ async def process_document_or_photo(update: Update, context: ContextTypes.DEFAUL
             mime_type = "image/png"
             
         prompt = """
-        Extract the following information from this Fixed Deposit document.
-        Return ONLY a valid JSON object matching the keys below. Do NOT include any comments (//), trailing commas, or markdown formatting.
-        {
-          "bank_code": "MBB",
-          "account_full": "1234567890",
-          "principal": 50000.00,
-          "interest_rate": 3.85,
-          "maturity_date": "2024-12-31"
-        }
+        Extract ALL fixed deposit records from this document.
+        Return ONLY a valid JSON ARRAY of objects matching the keys below. Do NOT include any comments (//), trailing commas, or markdown formatting.
+        [
+          {
+            "bank_code": "MBB",
+            "account_full": "1234567890",
+            "principal": 50000.00,
+            "interest_rate": 3.85,
+            "maturity_date": "2024-12-31"
+          }
+        ]
         (Note: bank_code should be a 3-4 letter shortcode for the bank. principal and interest_rate should be numbers, not strings).
         """
         
@@ -98,30 +100,37 @@ async def process_document_or_photo(update: Update, context: ContextTypes.DEFAUL
         else:
             result = json.loads(raw_text, strict=False)
             
-        if isinstance(result, list):
-            if len(result) > 0:
-                result = result[0]
-            else:
-                result = {}
-        
-        # Add to database
-        db.add_deposit(
-            bank_code=result.get("bank_code", "UNK"),
-            account_full=result.get("account_full", "0000"),
-            principal=float(result.get("principal", 0.0)),
-            interest_rate=float(result.get("interest_rate", 0.0)),
-            maturity_date=result.get("maturity_date", "1970-01-01")
-        )
-        
-        account_tail = db.mask_account(result.get("account_full", ""))
-        msg = (
-            f"✅ Successfully added Fixed Deposit!\n\n"
-            f"🏦 Bank: {result.get('bank_code')}\n"
-            f"🔢 Account: {account_tail}\n"
-            f"💰 Principal: ${result.get('principal')}\n"
-            f"📈 Rate: {result.get('interest_rate')}%\n"
-            f"📅 Maturity: {result.get('maturity_date')}"
-        )
+        if isinstance(result, dict):
+            # If the model returned a single object instead of an array, wrap it
+            result = [result]
+        elif not isinstance(result, list):
+            result = []
+            
+        if not result:
+            await update.message.reply_text("❌ No fixed deposit records found in the document.")
+            return
+            
+        success_messages = []
+        for item in result:
+            # Add to database
+            db.add_deposit(
+                bank_code=item.get("bank_code", "UNK"),
+                account_full=item.get("account_full", "0000"),
+                principal=float(item.get("principal", 0.0)),
+                interest_rate=float(item.get("interest_rate", 0.0)),
+                maturity_date=item.get("maturity_date", "1970-01-01")
+            )
+            
+            account_tail = db.mask_account(item.get("account_full", ""))
+            success_messages.append(
+                f"🏦 Bank: {item.get('bank_code')}\n"
+                f"🔢 Account: {account_tail}\n"
+                f"💰 Principal: ${item.get('principal')}\n"
+                f"📈 Rate: {item.get('interest_rate')}%\n"
+                f"📅 Maturity: {item.get('maturity_date')}"
+            )
+            
+        msg = f"✅ Successfully added {len(result)} Fixed Deposit(s)!\n\n" + "\n\n".join(success_messages)
         await update.message.reply_text(msg)
 
     except Exception as e:
