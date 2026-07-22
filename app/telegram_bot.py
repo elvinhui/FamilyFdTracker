@@ -48,14 +48,16 @@ async def process_document_or_photo(update: Update, context: ContextTypes.DEFAUL
             mime_type = "image/png"
             
         prompt = """
-        Extract the following information from this Fixed Deposit document. Return a JSON object exactly matching this schema:
+        Extract the following information from this Fixed Deposit document.
+        Return ONLY a valid JSON object matching the keys below. Do NOT include any comments (//), trailing commas, or markdown formatting.
         {
-          "bank_code": "String (e.g., MBB, PBB, CIMB, HLB. Try to deduce a 3-4 letter shortcode for the bank)",
-          "account_full": "String (The full account number of the fixed deposit)",
-          "principal": "Number (The initial deposit amount, e.g., 50000.00)",
-          "interest_rate": "Number (The interest rate percentage, e.g., 3.85)",
-          "maturity_date": "String (The maturity date in YYYY-MM-DD format)"
+          "bank_code": "MBB",
+          "account_full": "1234567890",
+          "principal": 50000.00,
+          "interest_rate": 3.85,
+          "maturity_date": "2024-12-31"
         }
+        (Note: bank_code should be a 3-4 letter shortcode for the bank. principal and interest_rate should be numbers, not strings).
         """
         
         # Send inline data directly to the model
@@ -70,12 +72,22 @@ async def process_document_or_photo(update: Update, context: ContextTypes.DEFAUL
         
         raw_text = response.text.strip()
         
-        # Robustly extract JSON object using regex
-        match = re.search(r'\{.*\}', raw_text, re.DOTALL)
-        if match:
-            json_str = match.group(0)
+        # Clean markdown code blocks
+        if "```json" in raw_text:
+            raw_text = raw_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in raw_text:
+            raw_text = raw_text.split("```")[1].strip()
+            
+        # Robustly extract JSON object using regex if there's still surrounding text
+        start_idx = raw_text.find('{')
+        end_idx = raw_text.rfind('}')
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            json_str = raw_text[start_idx:end_idx+1]
         else:
             json_str = raw_text
+            
+        # Clean up any trailing commas that might break json.loads
+        json_str = re.sub(r',\s*\}', '}', json_str)
             
         result = json.loads(json_str)
         
