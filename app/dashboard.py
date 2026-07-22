@@ -39,9 +39,17 @@ df = engine.calculate_days_to_maturity(df)
 
 summary = engine.get_portfolio_summary(df)
 
+# Toggle for sensitive data
+show_amounts = st.sidebar.toggle("👁️ Show Amounts", value=False)
+
 col1, col2, col3 = st.columns(3)
 col1.metric("Active Deposits", summary['active_deposits'])
-col2.metric("Total Principal", f"${summary['total_principal']:,.2f}")
+
+if show_amounts:
+    col2.metric("Total Principal", f"${summary['total_principal']:,.2f}")
+else:
+    col2.metric("Total Principal", "***")
+    
 col3.metric("Weighted Avg Interest", f"{summary['weighted_avg_interest']:.2f}%")
 
 st.subheader("Active Fixed Deposits")
@@ -53,6 +61,10 @@ if not df.empty:
     # Sort by days left
     display_df = display_df.sort_values(by='Days Left')
     
+    # Mask amounts if toggle is off
+    if not show_amounts:
+        display_df['Principal'] = "***"
+        
     st.dataframe(display_df, use_container_width=True)
 else:
     st.info("No active fixed deposits found.")
